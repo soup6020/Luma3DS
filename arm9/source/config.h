@@ -28,40 +28,47 @@
 
 #include "types.h"
 
+#define AUTOBOOT_DEFAULT_TWL_TID    0x0003000448424C41ull
+
 #define CONFIG(a)        (((configData.config >> (a)) & 1) != 0)
 #define MULTICONFIG(a)   ((configData.multiConfig >> (2 * (a))) & 3)
 #define BOOTCONFIG(a, b) ((configData.bootConfig >> (a)) & (b))
 
-#define CONFIG_FILE         "config.bin"
-#define CONFIG_VERSIONMAJOR 2
-#define CONFIG_VERSIONMINOR 4
+#define CONFIG_FILE         "config.ini"
+#define CONFIG_VERSIONMAJOR 3
+#define CONFIG_VERSIONMINOR 10
 
-#define BOOTCFG_NAND         BOOTCONFIG(0, 7)
-#define BOOTCFG_FIRM         BOOTCONFIG(3, 7)
-#define BOOTCFG_NOFORCEFLAG  BOOTCONFIG(6, 1)
-#define BOOTCFG_NTRCARDBOOT  BOOTCONFIG(7, 1)
+#define BOOTCFG_NAND         BOOTCONFIG(0, 1)
+#define BOOTCFG_EMUINDEX     BOOTCONFIG(1, 3)
+#define BOOTCFG_NOFORCEFLAG  BOOTCONFIG(3, 1)
+#define BOOTCFG_NTRCARDBOOT  BOOTCONFIG(4, 1)
 
 enum multiOptions
 {
     DEFAULTEMU = 0,
     BRIGHTNESS,
     SPLASH,
-    SPLASH_DURATION,
     PIN,
-    NEWCPU
+    NEWCPU,
+    AUTOBOOTMODE,
+    FORCEAUDIOOUTPUT,
 };
 
 enum singleOptions
 {
     AUTOBOOTEMU = 0,
-    USEEMUFIRM,
     LOADEXTFIRMSANDMODULES,
     PATCHGAMES,
+    REDIRECTAPPTHREADS,
     PATCHVERSTRING,
     SHOWGBABOOT,
+    ENABLEDSIEXTFILTER,
+    ALLOWUPDOWNLEFTRIGHTDSI,
     PATCHUNITINFO,
     DISABLEARM11EXCHANDLERS,
     ENABLESAFEFIRMROSALINA,
+
+    NUMCONFIGURABLE = PATCHUNITINFO,
 };
 
 typedef enum ConfigurationStatus

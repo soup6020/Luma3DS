@@ -9,6 +9,12 @@ endif
 TOPDIR ?= $(CURDIR)
 include $(DEVKITARM)/3ds_rules
 
+# Default 3DSX TitleID for hb:ldr (note: also defined in top-level Makefile)
+export HBLDR_DEFAULT_3DSX_TID ?= 000400000D921E00
+
+# What to call the title corresponding to HBLDR_DEFAULT_3DSX_TID (note: also defined in top-level Makefile)
+export HBLDR_DEFAULT_3DSX_TITLE_NAME ?= "hblauncher_loader"
+
 #---------------------------------------------------------------------------------
 # TARGET is the name of the output
 # BUILD is the directory where object files & intermediate files will be placed
@@ -19,14 +25,14 @@ include $(DEVKITARM)/3ds_rules
 TARGET		:=	$(notdir $(CURDIR))
 BUILD		:=	build
 SOURCES		:=	source source/gdb source/menus source/plugin source/redshift
-DATA		:=	source/gdb/xml
+DATA		:=	source/gdb/xml data
 INCLUDES	:=	include include/gdb include/menus include/redshift
 
 #---------------------------------------------------------------------------------
 # options for code generation
 #---------------------------------------------------------------------------------
 ARCH	:=	-march=armv6k -mtune=mpcore -mfloat-abi=hard -mtp=soft
-DEFINES :=	-D__3DS__
+DEFINES :=	-D__3DS__ -DHBLDR_DEFAULT_3DSX_TID="0x$(HBLDR_DEFAULT_3DSX_TID)ULL" -DHBLDR_DEFAULT_3DSX_TITLE_NAME="\"$(HBLDR_DEFAULT_3DSX_TITLE_NAME)\""
 
 FALSEPOSITIVES := -Wno-array-bounds -Wno-stringop-overflow -Wno-stringop-overread
 CFLAGS	:=	-g -std=gnu11 -Wall -Wextra -Werror -Wno-unused-value -Os -mword-relocations \
@@ -144,6 +150,11 @@ $(OFILES_SRC)	: $(HFILES_BIN)
 	@$(bin2o)
 #---------------------------------------------------------------------------------
 %.xml.o	%_xml.h:	%.xml
+#---------------------------------------------------------------------------------
+	@echo $(notdir $<)
+	@$(bin2o)
+#---------------------------------------------------------------------------------
+%.ini.o	%_ini.h:	%.ini
 #---------------------------------------------------------------------------------
 	@echo $(notdir $<)
 	@$(bin2o)

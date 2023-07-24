@@ -32,6 +32,7 @@
 #include "ifile.h"
 #include "menus.h"
 #include "utils.h"
+#include "luma_config.h"
 #include "menus/n3ds.h"
 #include "menus/cheats.h"
 #include "menus/quick_switchers.h"
@@ -39,8 +40,8 @@
 #include "menus/sysconfig.h"
 #include "minisoc.h"
 #include "plugin.h"
-#include "volume.h"
-#include "redshift/redshift.h"
+#include "menus/screen_filters.h"
+#include "shell.h"
 
 u32 menuCombo = 0;
 bool isHidInitialized = false;
@@ -91,6 +92,33 @@ u32 waitInputWithTimeout(s32 msec)
 
         hidScanInput();
         keys = convertHidKeys(hidKeysDown()) | (convertHidKeys(hidKeysDownRepeat()) & DIRECTIONAL_KEYS);
+        Draw_Unlock();
+    } while (keys == 0 && !menuShouldExit && isHidInitialized && (msec < 0 || n < msec));
+
+
+    return keys;
+}
+
+u32 waitInputWithTimeoutEx(u32 *outHeldKeys, s32 msec)
+{
+    s32 n = 0;
+    u32 keys;
+
+    do
+    {
+        svcSleepThread(1 * 1000 * 1000LL);
+        Draw_Lock();
+        if (!isHidInitialized || menuShouldExit)
+        {
+            keys = 0;
+            Draw_Unlock();
+            break;
+        }
+        n++;
+
+        hidScanInput();
+        keys = convertHidKeys(hidKeysDown()) | (convertHidKeys(hidKeysDownRepeat()) & DIRECTIONAL_KEYS);
+        *outHeldKeys = convertHidKeys(hidKeysHeld());
         Draw_Unlock();
     } while (keys == 0 && !menuShouldExit && isHidInitialized && (msec < 0 || n < msec));
 
@@ -161,7 +189,7 @@ u32 waitCombo(void)
 }
 
 static MyThread menuThread;
-static u8 ALIGN(8) menuThreadStack[0x1000];
+static u8 ALIGN(8) menuThreadStack[0x3000];
 
 static u32 homeBtnPressed = 0;
 
@@ -180,8 +208,14 @@ static Result menuUpdateMcuInfo(void)
     if (!isServiceUsable("mcu::HWC"))
         return -1;
 
-    res = mcuHwcInit();
+    Handle *mcuHwcHandlePtr = mcuHwcGetSessionHandle();
+    *mcuHwcHandlePtr = 0;
+
+    res = srvGetServiceHandle(mcuHwcHandlePtr, "mcu::HWC");
+    // Try to steal the handle if some other process is using the service (custom SVC)
     if (R_FAILED(res))
+        res = svcControlService(SERVICEOP_STEAL_CLIENT_SESSION, mcuHwcHandlePtr, "mcu::HWC");
+    if (res != 0)
         return res;
 
     // Read single-byte mcu regs 0x0A to 0x0D directly
@@ -197,7 +231,7 @@ static Result menuUpdateMcuInfo(void)
         batteryPercentage = (u32)((batteryPercentage + 0.05f) * 10.0f) / 10.0f;
 
         // Round battery voltage to 0.01V
-        batteryVoltage = (5u * data[3]) / 256.0f;
+        batteryVoltage = 0.02f * data[3];
         batteryVoltage = (u32)((batteryVoltage + 0.005f) * 100.0f) / 100.0f;
     }
 
@@ -212,12 +246,7 @@ static Result menuUpdateMcuInfo(void)
         mcuFwVersion = SYSTEM_VERSION(major - 0x10, minor, 0);
     }
 
-    // https://www.3dbrew.org/wiki/I2C_Registers#Device_3
-    MCUHWC_ReadRegister(0x58, dspVolumeSlider, 2); // Register-mapped ADC register
-    MCUHWC_ReadRegister(0x27, volumeSlider + 0, 1); // Raw volume slider state
-    MCUHWC_ReadRegister(0x09, volumeSlider + 1, 1); // Volume slider state
-
-    mcuHwcExit();
+    svcCloseHandle(*mcuHwcHandlePtr);
     return res;
 }
 
@@ -245,7 +274,7 @@ u32 menuCountItems(const Menu *menu)
 
 MyThread *menuCreateThread(void)
 {
-    if(R_FAILED(MyThread_Create(&menuThread, menuThreadMain, menuThreadStack, 0x1000, 52, CORE_SYSTEM)))
+    if(R_FAILED(MyThread_Create(&menuThread, menuThreadMain, menuThreadStack, 0x3000, 52, CORE_SYSTEM)))
         svcBreak(USERBREAK_PANIC);
     return &menuThread;
 }
@@ -253,19 +282,15 @@ MyThread *menuCreateThread(void)
 u32 menuCombo;
 u32 g_blockMenuOpen = 0;
 
-u32     DispWarningOnHome(void);
-
 void menuThreadMain(void)
 {
     if(isN3DS)
         N3DSMenu_UpdateStatus();
 
-    QuickSwitchers_UpdateStatuses();
-    SysConfigMenu_UpdateRehidFolderStatus();
-    ConfigExtra_UpdateAllMenuItems();
+    while (!isServiceUsable("ac:u") || !isServiceUsable("hid:USER") || !isServiceUsable("gsp::Gpu") || !isServiceUsable("cdc:CHK"))
+        svcSleepThread(250 * 1000 * 1000LL);
 
-    while (!isServiceUsable("ac:u") || !isServiceUsable("hid:USER"))
-        svcSleepThread(500 * 1000 * 1000LL);
+    handleShellOpened();
 
     hidInit(); // assume this doesn't fail
     isHidInitialized = true;
@@ -278,18 +303,18 @@ void menuThreadMain(void)
 
         Cheat_ApplyCheats();
 
-        if(((scanHeldKeys() & menuCombo) == menuCombo) && !rosalinaOpen && !g_blockMenuOpen)
+        if(((scanHeldKeys() & menuCombo) == menuCombo) && !g_blockMenuOpen)
         {
-            openRosalina();
+            menuEnter();
+            if(isN3DS) N3DSMenu_UpdateStatus();
+            PluginLoader__UpdateMenu();
+            menuShow(&rosalinaMenu);
+            menuLeave();
         }
 
-        // Check for home button on O3DS Mode3 with plugin loaded
-        if (homeBtnPressed != 0)
-        {
-            if (DispWarningOnHome())
-                svcKernelSetState(7); ///< reboot is fine since exiting a mode3 game reboot anyway
-
-            homeBtnPressed = 0;
+        if (saveSettingsRequest) {
+            LumaConfig_SaveSettings();
+            saveSettingsRequest = false;
         }
     }
 }
@@ -396,7 +421,7 @@ static void menuDraw(Menu *menu, u32 selected)
     else
         Draw_DrawFormattedString(SCREEN_BOT_WIDTH - 10 - SPACING_X * 15, 10, COLOR_WHITE, "%15s", "");
 
-    if(R_SUCCEEDED(mcuInfoRes))
+    if(mcuInfoRes == 0)
     {
         u32 voltageInt = (u32)batteryVoltage;
         u32 voltageFrac = (u32)(batteryVoltage * 100.0f) % 100u;

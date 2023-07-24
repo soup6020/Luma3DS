@@ -42,11 +42,7 @@ Menu sysconfigMenu = {
         { "Toggle Wireless", METHOD, .method = &SysConfigMenu_ToggleWireless },
         { "Control Wireless connection", METHOD, .method = &SysConfigMenu_ControlWifi },
         { "Toggle Power Button", METHOD, .method=&SysConfigMenu_TogglePowerButton },
-        { "Toggle LEDs", METHOD, .method = &SysConfigMenu_ToggleLEDs },
-        { "Toggle rehid folder: ", METHOD, .method = &SysConfigMenu_ToggleRehidFolder },
-        { "Permanent Brightness Recalibration", METHOD, .method = &Luminance_RecalibrateBrightnessDefaults },
-        { "Extra Config...", MENU, .menu = &configExtraMenu },
-        { "Software Volume Control", METHOD, .method = &Volume_ControlVolume },
+        { "Toggle power to card slot", METHOD, .method=&SysConfigMenu_ToggleCardIfPower},
         {},
     }
 };
@@ -340,46 +336,45 @@ void SysConfigMenu_DisableForcedWifiConnection(void)
     while(!menuShouldExit);
 }
 
-void SysConfigMenu_ToggleRehidFolder(void)
+void SysConfigMenu_ToggleCardIfPower(void)
 {
-    FS_Archive sdmcArchive = 0;
+    Draw_Lock();
+    Draw_ClearFramebuffer();
+    Draw_FlushFramebuffer();
+    Draw_Unlock();
 
-    if(R_SUCCEEDED(FSUSER_OpenArchive(&sdmcArchive, ARCHIVE_SDMC, fsMakePath(PATH_EMPTY, ""))))
+    bool cardIfStatus = false;
+    bool updatedCardIfStatus = false;
+
+    do
     {
-        MenuItem *item = &sysconfigMenu.items[4];
+        Result res = FSUSER_CardSlotGetCardIFPowerStatus(&cardIfStatus);
+        if (R_FAILED(res)) cardIfStatus = false;
 
-        if(R_SUCCEEDED(FSUSER_RenameDirectory(sdmcArchive, fsMakePath(PATH_ASCII, rehidPath), sdmcArchive, fsMakePath(PATH_ASCII, rehidOffPath))))
-            {
-                item->title = "Toggle rehid folder: [Disabled]";
-            }
-        else if(R_SUCCEEDED(FSUSER_RenameDirectory(sdmcArchive, fsMakePath(PATH_ASCII, rehidOffPath), sdmcArchive, fsMakePath(PATH_ASCII, rehidPath))))
-            {
-                item->title = "Toggle rehid folder: [Enabled]";
-            }
+        Draw_Lock();
+        Draw_DrawString(10, 10, COLOR_TITLE, "System configuration menu");
+        u32 posY = Draw_DrawString(10, 30, COLOR_WHITE, "Press A to toggle, press B to go back.\n\n");
+        posY = Draw_DrawString(10, posY, COLOR_WHITE, "Inserting or removing a card will reset the status,\nand you'll need to reinsert the cart if you want to\nplay it.\n\n");
+        Draw_DrawString(10, posY, COLOR_WHITE, "Current status:");
+        Draw_DrawString(100, posY, !cardIfStatus ? COLOR_RED : COLOR_GREEN, !cardIfStatus ? " DISABLED" : " ENABLED ");
 
-        FSUSER_CloseArchive(sdmcArchive);
-    }
-}
+        Draw_FlushFramebuffer();
+        Draw_Unlock();
 
-void SysConfigMenu_UpdateRehidFolderStatus(void)
-{
-    Handle dir;
-    FS_Archive sdmcArchive = 0;
+        u32 pressed = waitInputWithTimeout(1000);
 
-    if(R_SUCCEEDED(FSUSER_OpenArchive(&sdmcArchive, ARCHIVE_SDMC, fsMakePath(PATH_EMPTY, ""))))
-    {
-        MenuItem *item = &sysconfigMenu.items[4];
-
-        if(R_SUCCEEDED(FSUSER_OpenDirectory(&dir, sdmcArchive, fsMakePath(PATH_ASCII, rehidPath))))
-            {
-                FSDIR_Close(dir);
-                item->title = "Toggle rehid folder: [Enabled]";
-            }
+        if(pressed & KEY_A)
+        {
+            if (!cardIfStatus)
+                res = FSUSER_CardSlotPowerOn(&updatedCardIfStatus);
             else
-            {
-                item->title = "Toggle rehid folder: [Disabled]";
-            }
+                res = FSUSER_CardSlotPowerOff(&updatedCardIfStatus);
 
-        FSUSER_CloseArchive(sdmcArchive);
+            if (R_SUCCEEDED(res))
+                cardIfStatus = !updatedCardIfStatus;
+        }
+        else if(pressed & KEY_B)
+            return;
     }
+    while(!menuShouldExit);
 }

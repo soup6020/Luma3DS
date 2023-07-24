@@ -1,6 +1,6 @@
 /*
 *   This file is part of Luma3DS
-*   Copyright (C) 2016-2020 Aurora Wright, TuxSH
+*   Copyright (C) 2016-2023 Aurora Wright, TuxSH
 *
 *   This program is free software: you can redistribute it and/or modify
 *   it under the terms of the GNU General Public License as published by
@@ -24,10 +24,14 @@
 *         reasonable ways as different from the original version.
 */
 
-#include "svc/GetCFWInfo.h"
+#include "svc/CreateThread.h"
 
-// DEPRECATED
-Result GetCFWInfo(CfwInfo *out)
+Result CreateThreadHook(Handle *outThreadHandle, u32 ep, u32 arg, u32 stackTop, s32 priority, s32 processorId)
 {
-    return kernelToUsrMemcpy8(out, &cfwInfo, 16) ? 0 : 0xE0E01BF5;
+    u32 flags = flagsOfProcess(currentCoreContext->objectContext.currentProcess);
+    if (isN3DS && CONFIG(REDIRECTAPPTHREADS) && !disableThreadRedirection && processorId == 1 && (flags & 0xF00) == 0x100)
+        processorId = 2;
+
+    return CreateThread(outThreadHandle, ep, arg, stackTop, priority, processorId);
 }
+

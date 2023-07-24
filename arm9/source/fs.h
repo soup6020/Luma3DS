@@ -30,12 +30,18 @@
 
 #define PATTERN(a) a "_*.firm"
 
-bool mountFs(bool isSd, bool switchToCtrNand);
+bool mountSdCardPartition(bool switchMainDir);
+bool remountCtrNandPartition(bool switchMainDir);
+void unmountPartitions(void);
+
 u32 fileRead(void *dest, const char *path, u32 maxSize);
 u32 getFileSize(const char *path);
 bool fileWrite(const void *buffer, const char *path, u32 size);
 bool fileDelete(const char *path);
+bool fileCopy(const char *pathSrc, const char *pathDst, bool replace, void *tmpBuffer, size_t bufferSize);
 bool findPayload(char *path, u32 pressed);
 bool payloadMenu(char *path, bool *hasDisplayedMenu);
 u32 firmRead(void *dest, u32 firmType);
 void findDumpFile(const char *folderPath, char *fileName);
+
+bool doLumaUpgradeProcess(void);

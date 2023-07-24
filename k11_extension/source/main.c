@@ -121,6 +121,55 @@ void configHook(vu8 *cfgPage)
     *(vu32 *)(configPage + 0x44) = fcramLayout.systemSize;
     *(vu32 *)(configPage + 0x48) = fcramLayout.baseSize;
     *isDevUnit = true; // enable debug features
+
+    pidOffsetKProcess = KPROCESS_OFFSETOF(processId);
+    hwInfoOffsetKProcess = KPROCESS_OFFSETOF(hwInfo);
+    codeSetOffsetKProcess = KPROCESS_OFFSETOF(codeSet);
+    handleTableOffsetKProcess = KPROCESS_OFFSETOF(handleTable);
+    debugOffsetKProcess = KPROCESS_OFFSETOF(debug);
+    flagsKProcess = KPROCESS_OFFSETOF(kernelFlags);
+}
+
+void KProcessHwInfo__MapL1Section_Hook(void);
+void KProcessHwInfo__MapL2Section_Hook(void);
+
+static void installMmuHooks(void)
+{
+    u32 *mapL1Section = NULL;
+    u32 *mapL2Section = NULL;
+    u32 *off;
+
+    for(off = (u32 *)officialSVCs[0x1F]; *off != 0xE1CD60F0; ++off);
+    off = decodeArmBranch(off + 1);
+
+    for (; *off != 0xE58D5000; ++off);
+    off = decodeArmBranch(off + 1);
+
+    for (; *off != 0xE58DC000; ++off);
+    off = decodeArmBranch(off + 1);
+    for (; *off != 0xE1A0000B; ++off);
+    off = decodeArmBranch(off + 1);
+    for (; *off != 0xE59D2030; ++off);
+    off = decodeArmBranch(off + 1);
+
+    for (; *off != 0xE88D1100; ++off);
+    mapL2Section = (u32 *)PA_FROM_VA_PTR(decodeArmBranch(off + 1));
+
+    do
+    {
+        for (; *off != 0xE58D8000; ++off);
+        u32 *loc = (u32 *)PA_FROM_VA_PTR(decodeArmBranch(++off));
+        if (loc != mapL2Section)
+            mapL1Section = loc;
+    } while (mapL1Section == NULL);
+
+    mapL1Section[1] = 0xE28FE004; // add lr, pc, #4
+    mapL1Section[2] = 0xE51FF004; // ldr pc, [pc, #-4]
+    mapL1Section[3] = (u32)KProcessHwInfo__MapL1Section_Hook;
+
+    mapL2Section[1] = 0xE28FE004; // add lr, pc, #4
+    mapL2Section[2] = 0xE51FF004; // ldr pc, [pc, #-4]
+    mapL2Section[3] = (u32)KProcessHwInfo__MapL2Section_Hook;
 }
 
 void KProcessHwInfo__MapL1Section_Hook(void);
@@ -321,6 +370,7 @@ static void findUsefulSymbols(void)
     // The official prototype of ControlMemory doesn't have that extra param'
     ControlMemory = (Result (*)(u32 *, u32, u32, u32, MemOp, MemPerm, bool))
                     decodeArmBranch((u32 *)officialSVCs[0x01] + 5);
+    CreateThread = (Result (*)(Handle *, u32, u32, u32, s32, s32))decodeArmBranch((u32 *)officialSVCs[0x08] + 5);
     SleepThread = (void (*)(s64))officialSVCs[0x0A];
     CreateEvent = (Result (*)(Handle *, ResetType))decodeArmBranch((u32 *)officialSVCs[0x17] + 3);
     CloseHandle = (Result (*)(Handle))officialSVCs[0x23];
@@ -396,6 +446,7 @@ void main(FcramLayout *layout, KCoreContext *ctxs)
     memcpy(officialSVCs, arm11SvcTable, 4 * 0x7E);
 
     findUsefulSymbols();
+    buildAlteredSvcTable();
 
     GetSystemInfo(&nb, 26, 0);
     nbSection0Modules = (u32)nb;
