@@ -368,11 +368,6 @@ static Result GetProgramInfoImpl(ExHeader_Info *exheaderInfo, u64 programHandle)
             exheaderInfo->aci.local_caps.core_info.n3ds_system_mode = g_memoryOverrideConfig.n3ds_mode;
     }
 
-    if(isN3DS)
-    {
-        exheaderInfo->aci.local_caps.core_info.enable_l2c |= useN3dsSettings(exheaderInfo->aci.local_caps.title_id);
-    }
-
     return res;
 }
 
