@@ -38,7 +38,6 @@
 #include "menus/cheats.h"
 #include "menus/sysconfig.h"
 #include "menus/config_extra.h"
-#include "redshift/redshift.h"
 #include "input_redirection.h"
 #include "minisoc.h"
 #include "draw.h"
