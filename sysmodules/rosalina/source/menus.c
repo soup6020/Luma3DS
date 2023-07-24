@@ -69,7 +69,7 @@ bool rosalinaMenuShouldShowDebugInfo(void)
 
     s64 out;
     svcGetSystemInfo(&out, 0x10000, 0x200);
-    return out == 0;
+    return out == 1;
 }
 
 void RosalinaMenu_SaveSettings(void)
